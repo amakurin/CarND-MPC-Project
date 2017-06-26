@@ -19,9 +19,113 @@ Additional goal was to maximize speed of the car keeping driving stable (with mi
 [model_cont]: ./result/model_cont.png "Model continuous"
 [model_descrete]: ./result/model_descrete.png "Model descrete"
 
+## Demo
+
 ![result][result]
 
-Here's the [link to full video](https://www.youtube.com/watch?v=5qH1PhHaAAI).
+Here's the [link to full video](https://youtu.be/fSjnHh_LDdM).
+
+## Model
+
+MPC stands for Model Predictive Control, so let's start with the model.
+
+In this project [kinematic bicycle model](http://www.me.berkeley.edu/~frborrel/pdfpub/IV_KinematicMPC_jason.pdf) is used. Here is classic drawing for derivation of model's equations:
+
+![classic_model][classic_model] 
+
+**x**, **y**, **psi** and **v** are state variables of the vehicle. Control inputs are **delta** (steering angle) and **a** - acceleration that isn't shown on drawing, but we assume it is directed along the vehicle axis.
+
+Drawing shows that velocity vector **v** forms angle **beta** with vehicle main axis. This is important for long vehicles or for vehicles with ability to steer by front and rear wheels, or drift. 
+
+None of this is applicable to project, so we can assume  velocity vector is directed along main axis of vehicle. So **beta** is zero and drawing for this case looks like this:
+
+![simplified_model][simplified_model]
+
+Using trig and formula for [angular velocity](https://en.wikipedia.org/wiki/angular_velocity), we can formulate following system of equations:
+
+![model_init][model_init]
+
+where **a** is vehicle acceleration.  
+
+From right triangle with catheti of **R** and **Lf** we can derive equation for **R** , substitute to psi dot equation, and assume tan(delta) = delta for small values:
+
+![psidot][psidot]
+
+Note about small delta assumption: maximum posible steering angle for project is 25 degrees, which is 0.436332 radians; for that value the error is tan(0.436332)-0.436332 = 0.029975277097
+
+So the final system of equations for project model is: 
+
+![model_cont][model_cont]
+
+Or in discrete case:
+
+![model_cont][model_descrete]
+
+
+## Prediction
+
+Discrete model equations are used for latency compensation and solving for optimal trajectory.
+
+### Latency in control system
+
+Appling control takes time and produces effect of latency. Because of latency, the state used for optimizing trajectory and control could differ to much from actual state at the moment of actuation. It is especially important during tough actuation. You can see this on [0:21](https://youtu.be/fSjnHh_LDdM?t=21) of project video: yellow line is a reference trajectory, it is build by transforming reference waypoints from world to vehicle coordinate space, using predicted state. But even with prediction on a tough turn we see drift of this line. This drift is caused by latency (or\and inacurate prediction) - the state used for coordinate transformation differs too much from the actual state on the moment of line rendering.
+
+The project simulates worst case of latency - just thread.sleep(100), which means that controller can't neither actuate nor read state during 100ms.
+
+To fight the latency, firstly, latency is estimated, then actual state on the moment of actuation is predicted using model equations, and after that, all calculations are held using the predicted state.
+
+### Optimization of trajectory and control
+
+The task of vehicle control is to drive vehicle as close as possible to reference trajectory. 
+
+Simulator used with project doesnot provides entire trajectory, but few reference waypoints in world coordinates. So th first task of controller after state prediction is to calculate reference trajectory. This is done by first transforming waypoints to vehicle reference frame and then by fitting 3d order polynomial with resulting points.
+
+MPC optimization task formulated as follows: using model equations, find the control parameters (**delta** and **a**) as well as resulting trajectory (state parameters **x**, **y**, **psi**, **v** at each actuation step) such that minizes value of cost function.
+
+Project cost function sumarize folllowing:
+
+* cross-track error (CTE) cost;
+* heading error (EPsi) cost;
+* velocity error cost;
+* high steering angle cost;
+* sharp steering cost;
+* sharp acceleration\deceleration cost.
+
+These costs are computed as product of corresponding errors and proportional coefficients. These coefficients are hyperparameters of MPC controller.
+
+Another important hyperparameters are 
+
+* **T** - prediction horizon in seconds; 
+* **N** - number of timesteps in the horizon;
+* **dt** - prediction timestep between actuations.
+
+Actually, N = T/dt. 
+
+#### Prediction horizon
+
+In project case, prediction horizon should be selected such that predicted trajectory doesn't go much beyond the furthest waypoint. We don't have actual trajectory, and fitted polynomial gives inacurate estimation beyond the fitting.  
+
+#### Prediction timestep
+
+Prediction timestep should be small enough to minimize discretization error.
+
+But, except discretization error, there is no sence in using value for dt much lesser then overall latency. If so - solver will predict actuations which will never applied because of latency, so it is just wasting of computation time and increasing of latency.
+
+For project dt=0.2 and N=7 were chosen. This gives 1.4 seconds of prediction horizon, which a little beyond the furthest waypoint on high speeds.
+
+#### Speed setpoint
+
+For speed setpoint controller algorithm analyzes provided waypoints to find maximum heading deviation, then manhattan distance is computed to point with maximum heading deviation. The ratio of this distance to heading deviation is used to compute maximum speed for current state. Then this value is used to compute speed setpoint with respect to current EPSI.
+
+Project video was created by running controller with following parameters:
+
+```
+./mpc V_MIN=25 V_SAFE=35 V_MAX=70
+```
+on laptop 2.5GHZ Core i7, 16GB DDR3.
+
+Default parameters not so agressive to let controller drive safely on modest machines.
+  
 
 ---
 
