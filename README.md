@@ -1,5 +1,27 @@
 # CarND-Controls-MPC
 Self-Driving Car Engineer Nanodegree Program
+---
+The goals / steps of this project are the following:
+
+* Apply MPC to steering and throttle of a simulated car.
+* Compensate latency in control system (100ms).
+* Tune hyperparameters of controller so that car could autonomously drive a lap without living the track. No tire may leave the drivable portion of the track surface. The car may not pop up onto ledges or roll over any surfaces that would otherwise be considered unsafe (if humans were in the vehicle). 
+
+Additional goal was to maximize speed of the car keeping driving stable (with minimum oscillations). 
+
+[//]: # (Image References)
+
+[result]: ./result/final.gif "Result"
+[classic_model]: ./result/classic_model.png "Classic model"
+[simplified_model]: ./result/simplified_model.png "Simplified model"
+[model_init]: ./result/model_init.png "Model"
+[psidot]: ./result/psidot.png "Psi dot equations"
+[model_cont]: ./result/model_cont.png "Model continuous"
+[model_descrete]: ./result/model_descrete.png "Model descrete"
+
+![result][result]
+
+Here's the [link to full video](https://www.youtube.com/watch?v=5qH1PhHaAAI).
 
 ---
 

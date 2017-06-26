@@ -4,13 +4,21 @@
 #include <iostream>
 #include <thread>
 #include <vector>
+#include <map>
+#include <string>
 #include "Eigen-3.3/Eigen/Core"
 #include "Eigen-3.3/Eigen/QR"
 #include "MPC.h"
 #include "json.hpp"
 
+#include "matplotlibcpp.h"
+
+namespace plt = matplotlibcpp;
+
 // for convenience
 using json = nlohmann::json;
+
+const double MPH_TO_MPS = 1609.344/3600;
 
 // For converting back and forth between radians and degrees.
 constexpr double pi() { return M_PI; }
@@ -32,44 +40,91 @@ string hasData(string s) {
   return "";
 }
 
-// Evaluate a polynomial.
-double polyeval(Eigen::VectorXd coeffs, double x) {
-  double result = 0.0;
-  for (int i = 0; i < coeffs.size(); i++) {
-    result += coeffs[i] * pow(x, i);
+void sim_course_model(int steps, double dt 
+                    , double steering, double velocity
+                    , double Lf
+                    , std::vector<double> &x_vals
+                    , std::vector<double> &y_vals
+                    , std::vector<double> &psi_vals
+                    ){
+
+  for (int i = 1; i< steps; ++i){
+    double psi = psi_vals[i-1];
+    x_vals[i] = x_vals[i-1] + velocity * cos(psi) * dt;
+    y_vals[i] = y_vals[i-1] + velocity * sin(psi) * dt;
+    psi_vals[i] = psi + velocity * steering * dt / Lf;
   }
-  return result;
 }
 
-// Fit a polynomial.
-// Adapted from
-// https://github.com/JuliaMath/Polynomials.jl/blob/master/src/Polynomials.jl#L676-L716
-Eigen::VectorXd polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yvals,
-                        int order) {
-  assert(xvals.size() == yvals.size());
-  assert(order >= 1 && order <= xvals.size() - 1);
-  Eigen::MatrixXd A(xvals.size(), order + 1);
+void sim_car_model(int steps, double dt
+                    , double steering, double velocity
+                    , double Lf, double Lr
+                    , std::vector<double> &x_vals
+                    , std::vector<double> &y_vals
+                    , std::vector<double> &psi_vals
+                    ){
 
-  for (int i = 0; i < xvals.size(); i++) {
-    A(i, 0) = 1.0;
+  for (int i = 1; i< steps; ++i){
+    double beta = atan(Lr * tan(steering) / (Lf + Lr));
+    double psi = psi_vals[i-1];
+    x_vals[i] = x_vals[i-1] + velocity * cos(psi + beta) * dt;
+    y_vals[i] = y_vals[i-1] + velocity * sin(psi + beta) * dt;
+    psi_vals[i] = psi + velocity * sin(beta) * dt / Lr;
   }
-
-  for (int j = 0; j < xvals.size(); j++) {
-    for (int i = 0; i < order; i++) {
-      A(j, i + 1) = A(j, i) * xvals(j);
-    }
-  }
-
-  auto Q = A.householderQr();
-  auto result = Q.solve(yvals);
-  return result;
 }
 
-int main() {
-  uWS::Hub h;
+void LfLrExperiment(MPC_params params){
+  int steps = (int) params.get_util("EX_STEPS", 1000);
+  double steering = params.get_util("EX_STEER", 0.436332);
+  double velocity = params.get_util("EX_V", 5.0);
+  double dt = params.get_util("EX_DT", 0.01);
+
+  std::vector<double> t(steps, 0.0);
+  for (int i = 1; i< steps; ++i){
+    t[i] = dt*i;
+  }
+  
+  std::vector<double> x_vals0(steps, 0.0);
+  std::vector<double> y_vals0(steps, 0.0);
+  std::vector<double> psi_vals0(steps, 0.0);
+
+
+  double Lf0 = params.get_util("EX_LF0", 2.67);;
+  sim_course_model(steps, dt, steering, velocity, Lf0, x_vals0, y_vals0, psi_vals0);
+
+  std::vector<double> x_vals1(steps, 0.0);
+  std::vector<double> y_vals1(steps, 0.0);
+  std::vector<double> psi_vals1(steps, 0.0);
+  double Lf1 = params.LF;
+  double Lr1 = params.LR;
+  sim_car_model(steps, dt, steering, velocity, Lf1, Lr1, x_vals1, y_vals1, psi_vals1);
+  plt::subplot(2, 1, 1);
+  plt::title("y(x) Red - simplified, Blue - original");
+  plt::axis("equal");
+  plt::plot(x_vals0, y_vals0, "r-"
+          , x_vals1, y_vals1, "b-");
+  plt::subplot(2, 1, 2);
+  plt::title("psi(t) Red - simplified, Blue - original");
+  plt::plot(t, psi_vals0, "r-"
+          , t, psi_vals1, "b-");
+  plt::show();
+}
+
+
+int main(int argc, char *argv[]) {
 
   // MPC is initialized here!
   MPC mpc;
+  mpc.params.from_args(argc, argv);
+
+  std::cout << mpc.params;
+  if ((int) mpc.params.get_util("EX_DO", 0.0) != 0) 
+    LfLrExperiment(mpc.params);
+  
+  if ((int) mpc.params.get_util("EX_ONLY", 0.0) != 0) 
+    return 0;
+
+  uWS::Hub h;
 
   h.onMessage([&mpc](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
@@ -77,7 +132,7 @@ int main() {
     // The 4 signifies a websocket message
     // The 2 signifies a websocket event
     string sdata = string(data).substr(0, length);
-    cout << sdata << endl;
+    //cout << sdata << endl;
     if (sdata.size() > 2 && sdata[0] == '4' && sdata[1] == '2') {
       string s = hasData(sdata);
       if (s != "") {
@@ -91,45 +146,47 @@ int main() {
           double py = j[1]["y"];
           double psi = j[1]["psi"];
           double v = j[1]["speed"];
+          double steering_angle = j[1]["steering_angle"];
+          double throttle = j[1]["throttle"];
 
-          /*
-          * TODO: Calculate steering angle and throttle using MPC.
-          *
-          * Both are in between [-1, 1].
-          *
-          */
-          double steer_value;
-          double throttle_value;
+          // Convert speed from mph to meters per second
+          v = v * MPH_TO_MPS;
+
+          // Update vehicle state using simulator data and prediction to compensate latency
+          mpc.predict_vehicle_state({px, py, psi, v, -steering_angle, throttle});
+          
+          // Transform faypoints into vehicle coordinates, fit polynomial and store results.
+          mpc.use_waypoints(ptsx, ptsy);
+
+          // Calculate steering angle, throttle and trajectory using MPC.
+          auto vars = mpc.Solve();
+
+          // Normalize steering to [-1, 1]
+          double steer_value = -vars[0]/deg2rad(25);
+          double throttle_value = vars[1];
 
           json msgJson;
+
           // NOTE: Remember to divide by deg2rad(25) before you send the steering value back.
           // Otherwise the values will be in between [-deg2rad(25), deg2rad(25] instead of [-1, 1].
           msgJson["steering_angle"] = steer_value;
           msgJson["throttle"] = throttle_value;
 
-          //Display the MPC predicted trajectory 
-          vector<double> mpc_x_vals;
-          vector<double> mpc_y_vals;
-
-          //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
-          // the points in the simulator are connected by a Green line
-
-          msgJson["mpc_x"] = mpc_x_vals;
-          msgJson["mpc_y"] = mpc_y_vals;
-
           //Display the waypoints/reference line
-          vector<double> next_x_vals;
-          vector<double> next_y_vals;
+          // the points are in vehicle's space  
+          // and are connected by a Yellow line in the simulator       
+          msgJson["next_x"] = mpc.waypoints_x;
+          msgJson["next_y"] = mpc.waypoints_y;
 
-          //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
-          // the points in the simulator are connected by a Yellow line
-
-          msgJson["next_x"] = next_x_vals;
-          msgJson["next_y"] = next_y_vals;
+          // Display the MPC predicted trajectory 
+          // the points are in vehicle's space  
+          // and are connected by a Green line in the simulator       
+          msgJson["mpc_x"] = mpc.trajectory_x;
+          msgJson["mpc_y"] = mpc.trajectory_y;
 
 
           auto msg = "42[\"steer\"," + msgJson.dump() + "]";
-          std::cout << msg << std::endl;
+          //std::cout << msg << std::endl;
           // Latency
           // The purpose is to mimic real driving conditions where
           // the car does actuate the commands instantly.
@@ -182,4 +239,5 @@ int main() {
     return -1;
   }
   h.run();
+
 }
