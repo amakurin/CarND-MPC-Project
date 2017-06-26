@@ -23,6 +23,7 @@ public:
   double V_MIN     ;
   double V_SAFE    ;
   double V_MAX     ;
+  double LIM_A     ;
   double LIM_CURV  ;
   double LIM_EPSI  ;
   double V_SETPOINT;

@@ -17,7 +17,7 @@ using CppAD::AD;
 //const double Lf = 2.67;
 
 //-----------------------
-// NOTE: LF gone to MPC_params, as i experimented with different models 
+// NOTE: LF gone to MPC_params for experiments with different models
 //-----------------------
 
 
@@ -40,24 +40,24 @@ MPC_params::MPC_params(){
   K_SMOOTH   = 1000.0;
 
   // Minimum speed in MPS to use when vehicle become highly unstable
-  V_MIN      =   20.0;
+  V_MIN      =   15.0; //25.0
   // Safe speed in MPS to use on tough turns 
-  V_SAFE     =   30.0;
+  V_SAFE     =   25.0; //35.0
   // Maximum speed in MPS to use when stable on straight portion of track 
-  V_MAX      =   70.0;
+  V_MAX      =   50.0; //70.0
   // Threshold for 'tough turn' coefficient called CURV (but it is not a curvature radius)
   // used for speed setpoint estimation 
   LIM_CURV   =   80.0;
   // Threshold for epsi during speed setpoint estimation 
-  LIM_EPSI   =    0.3;
+  LIM_EPSI   =    0.3; //0.4
   // Speed setpoint for solver (estimated dynamically before solving) 
   V_SETPOINT =   30.0;
   // Timestep to use in latency compensation  
   P_DT       =   0.01;
   // Timestep to use with solver  
-  S_DT       =   0.05;
+  S_DT       =   0.2;
   // Count of steps to use with solver  
-  set_S_N(20);
+  set_S_N(7);
 }
 
 void MPC_params::set_S_N(int val){
