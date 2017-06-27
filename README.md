@@ -124,7 +124,7 @@ Project video was created by running controller with following parameters:
 ```
 on laptop 2.5GHZ Core i7, 16GB DDR3.
 
-Default parameters not so agressive to let controller drive safely on modest machines.
+Default parameters are not so agressive to let controller drive safely on modest machines.
   
 
 ---
